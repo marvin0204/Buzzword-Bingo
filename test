@@ -1,0 +1,121 @@
+import os
+import random
+import time
+import argparse
+from datetime import datetime
+
+# Klasse für die Bingokarte
+class BingoCard:
+    def _init_(self, width, height, word_file):
+        self.width = width
+        self.height = height
+        self.words = self.load_words(word_file)
+        self.card = self.generate_card()
+
+    # Wörter aus einer Textdatei laden
+    def load_words(self, word_file):
+        with open(word_file, 'r') as file:
+            words = file.readlines()
+        return [word.strip() for word in words]
+
+    # Bingokarte generieren
+    def generate_card(self):
+        card = [[' ' for _ in range(self.width)] for _ in range(self.height)]
+        random.shuffle(self.words)
+        for i in range(min(self.width * self.height, len(self.words))):
+            row = i // self.width
+            col = i % self.width
+            card[row][col] = self.words[i]
+        return card
+
+    # Bingokarte anzeigen
+    def display_card(self):
+        for row in self.card:
+            print('|' + '|'.join(row) + '|')
+
+# Klasse für das Buzzword-Bingo-Spiel
+class BuzzwordBingo:
+    def _init_(self, num_players, width, height, word_file):
+        self.num_players = num_players
+        self.width = width
+        self.height = height
+        self.word_file = word_file
+        self.players = []
+        self.game_log = []
+
+    # Spielstart
+    def start_game(self):
+        self.generate_log("Start des Spiels")
+        self.generate_log(f"Größe des Spielfelds: ({self.width}x{self.height})")
+        self.generate_log("Erstellung der Bingokarten für die Spieler")
+        for i in range(self.num_players):
+            card = BingoCard(self.width, self.height, self.word_file)
+            self.players.append(card)
+            self.generate_log(f"Bingokarte für Spieler {i+1} generiert")
+        self.play_game()
+
+    # Spielablauf
+    def play_game(self):
+        while True:
+            for i, player in enumerate(self.players):
+                print(f"\nSpieler {i+1}, deine Bingokarte:")
+                player.display_card()
+                input("Drücken Sie Enter, wenn Sie ein Wort auf Ihrer Karte markieren möchten: ")
+                self.generate_log(f"Spieler {i+1} markiert ein Wort")
+                if self.check_winner(player):
+                    self.generate_log("Sieg!")
+                    print(f"\nSpieler {i+1} gewinnt!")
+                    self.end_game()
+                    return
+
+    # Überprüfen, ob ein Spieler gewonnen hat
+    def check_winner(self, player):
+        # Überprüfen der Spalten
+        for col in range(self.width):
+            if all(player.card[row][col] == 'X' for row in range(self.height)):
+                return True
+        # Überprüfen der Zeilen
+        for row in range(self.height):
+            if all(player.card[row][col] == 'X' for col in range(self.width)):
+                return True
+        # Überprüfen der Diagonalen
+        if all(player.card[i][i] == 'X' for i in range(min(self.width, self.height))) or \
+                all(player.card[i][self.width - i - 1] == 'X' for i in range(min(self.width, self.height))):
+            return True
+        return False
+
+    # Spielende
+    def end_game(self):
+        self.generate_log("Ende des Spiels")
+        self.write_log()
+
+    # Logeintrag erstellen
+    def generate_log(self, message):
+        timestamp = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
+        self.game_log.append(f"{timestamp} {message}")
+
+    # Logdatei schreiben
+    def write_log(self):
+        player_num = 1
+        filename = datetime.now().strftime("%Y-%m-%d-%H-%M-%S") + "-bingo-Spieler" + str(player_num) + ".txt"
+        with open(filename, 'w') as file:
+            for log_entry in self.game_log:
+                file.write(log_entry + '\n')
+
+def main():
+    parser = argparse.ArgumentParser(description='Buzzword-Bingo-Spiel')
+    parser.add_argument('-p', '--players', type=int, default=2, help='Anzahl der Spieler')
+    parser.add_argument('-x', '--xaxis', type=int, default=5, help='Breite der Bingokarte')
+    parser.add_argument('-y', '--yaxis', type=int, default=5, help='Höhe der Bingokarte')
+    parser.add_argument('-w', '--wordfile', type=str, required=True, help='Pfad zur Textdatei mit den Buzzwords')
+    args = parser.parse_args()
+
+    if args.xaxis * args.yaxis < args.players + 1:
+        print("Fehler: Nicht genügend Felder auf der Bingokarte für die Spieler!")
+        return
+
+    game = BuzzwordBingo(args.players, args.xaxis, args.yaxis, args.wordfile)
+    game.start_game()
+
+if _name_ == "_main_":
+    main()
