@@ -1,0 +1,145 @@
+import random
+import socket
+import threading
+
+# Spiellogik-Modul
+class BingoSpiel:
+    def __init__(self, buzzwords):
+        self.buzzwords = buzzwords
+        self.bingo_karten = {}
+
+    def buzzword_ziehen(self):
+        if self.buzzwords:
+            return self.buzzwords.pop(random.randint(0, len(self.buzzwords) - 1))
+        else:
+            return None
+
+    def bingo_karte_erstellen(self, player_id):
+        if player_id not in self.bingo_karten:
+            self.bingo_karten[player_id] = random.sample(self.buzzwords, 5)
+
+    def buzzword_markieren(self, player_id, buzzword):
+        if player_id in self.bingo_karten and buzzword in self.bingo_karten[player_id]:
+            self.bingo_karten[player_id].remove(buzzword)
+            return True
+        return False
+
+    def bingo_pruefen(self, player_id):
+        return len(self.bingo_karten[player_id]) == 0
+
+# IPC-Modul
+class IPCServer:
+    def __init__(self, host='localhost', port=65432):
+        self.host = host
+        self.port = port
+        self.server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.server_socket.bind((self.host, self.port))
+        self.server_socket.listen(5)
+        self.clients = []
+
+    def start(self):
+        print(f"Server gestartet und hört auf {self.host}:{self.port}")
+        while True:
+            client_socket, client_address = self.server_socket.accept()
+            self.clients.append(client_socket)
+            threading.Thread(target=self.handle_client, args=(client_socket,)).start()
+
+    def handle_client(self, client_socket):
+        while True:
+            try:
+                message = client_socket.recv(1024).decode('utf-8')
+                if message:
+                    print(f"Nachricht von Client erhalten: {message}")
+                    # Broadcast message to all clients
+                    for client in self.clients:
+                        client.sendall(message.encode('utf-8'))
+            except:
+                client_socket.close()
+                self.clients.remove(client_socket)
+                break
+
+class IPCClient:
+    def __init__(self, host='localhost', port=65432):
+        self.host = host
+        self.port = port
+        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.client_socket.connect((self.host, self.port))
+
+    def send_message(self, message):
+        self.client_socket.sendall(message.encode('utf-8'))
+
+    def receive_message(self):
+        return self.client_socket.recv(1024).decode('utf-8')
+
+# Benutzeroberfläche
+def start_bingo_game():
+    buzzwords = ["Synergy", "Blockchain", "AI", "Machine Learning", "Big Data", "IoT", "Cloud", "5G", "DevOps", "Microservices"]
+    bingo_spiel = BingoSpiel(buzzwords)
+
+    player_id = input("Bitte geben Sie Ihre Spieler-ID ein: ")
+    bingo_spiel.bingo_karte_erstellen(player_id)
+    print(f"Ihre Bingo-Karte: {bingo_spiel.bingo_karten[player_id]}")
+
+    ipc_client = IPCClient()
+
+    while True:
+        action = input("Aktion: (1) Buzzword ziehen, (2) Buzzword markieren, (3) Beenden: ")
+        if action == "1":
+            buzzword = bingo_spiel.buzzword_ziehen()
+            if buzzword:
+                ipc_client.send_message(f"Buzzword gezogen: {buzzword}")
+                print(f"Buzzword gezogen: {buzzword}")
+            else:
+                print("Keine Buzzwords mehr verfügbar.")
+        elif action == "2":
+            buzzword = input("Welches Buzzword möchten Sie markieren? ")
+            if bingo_spiel.buzzword_markieren(player_id, buzzword):
+                print(f"Buzzword {buzzword} markiert.")
+                if bingo_spiel.bingo_pruefen(player_id):
+                    print("Bingo! Sie haben gewonnen!")
+                    ipc_client.send_message(f"Spieler {player_id} hat Bingo!")
+                    break
+            else:
+                print(f"Buzzword {buzzword} ist nicht auf Ihrer Karte.")
+        elif action == "3":
+            print("Spiel beendet.")
+            break
+        else:
+            print("Ungültige Aktion. Bitte erneut versuchen.")
+
+# Qualitätssicherung
+def test_bingo_spiel():
+    buzzwords = ["Synergy", "Blockchain", "AI", "Machine Learning", "Big Data"]
+    bingo_spiel = BingoSpiel(buzzwords.copy())
+
+    player_id = "Player1"
+    bingo_spiel.bingo_karte_erstellen(player_id)
+    assert len(bingo_spiel.bingo_karten[player_id]) == 5, "Fehler beim Erstellen der Bingo-Karte"
+
+    buzzword = bingo_spiel.buzzword_ziehen()
+    assert buzzword in buzzwords, "Fehler beim Ziehen eines Buzzwords"
+
+    mark_result = bingo_spiel.buzzword_markieren(player_id, buzzword)
+    assert mark_result is True, "Fehler beim Markieren eines Buzzwords"
+
+    bingo_result = bingo_spiel.bingo_pruefen(player_id)
+    assert bingo_result is False, "Fehler bei der Bingo-Prüfung"
+
+    for bw in bingo_spiel.bingo_karten[player_id].copy():
+        bingo_spiel.buzzword_markieren(player_id, bw)
+
+    bingo_result = bingo_spiel.bingo_pruefen(player_id)
+    assert bingo_result is True, "Fehler bei der Bingo-Prüfung nach Markieren aller Buzzwords"
+
+    print("Alle Tests bestanden!")
+
+if __name__ == "__main__":
+    # Start the server in a separate thread
+    server = IPCServer()
+    threading.Thread(target=server.start).start()
+
+    # Run tests
+    test_bingo_spiel()
+
+    # Start the game
+    start_bingo_game()
