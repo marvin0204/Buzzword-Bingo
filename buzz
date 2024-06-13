@@ -22,17 +22,17 @@ def display_bingo_cards(screen, card1, marked1, card2, marked2):
         for x, word in enumerate(row):
             if marked1[y][x]:
                 word = '\u0336'.join(word) + '\u0336'  # Durchstreichen des Wortes
-                screen.print_at(word, x * 10, y * 2 + 2, colour=2)
+                screen.print_at(word, x * 10, y * 2 + 2, colour=2)  # Grün für markierte Wörter
             else:
-                screen.print_at(word, x * 10, y * 2 + 2)
+                screen.print_at(word, x * 10, y * 2 + 2, colour=7)  # Weiß für unmarkierte Wörter
     
     for y, row in enumerate(card2):
         for x, word in enumerate(row):
             if marked2[y][x]:
                 word = '\u0336'.join(word) + '\u0336'  # Durchstreichen des Wortes
-                screen.print_at(word, x * 10 + 40, y * 2 + 2, colour=2)
+                screen.print_at(word, x * 10 + 40, y * 2 + 2, colour=2)  # Grün für markierte Wörter
             else:
-                screen.print_at(word, x * 10 + 40, y * 2 + 2)
+                screen.print_at(word, x * 10 + 40, y * 2 + 2, colour=7)  # Weiß für unmarkierte Wörter
 
     screen.refresh()
 
@@ -53,13 +53,16 @@ def check_winner(marked):
 def player_game(conn, player_id, card, xaxis, yaxis, log_file):
     marked = [[False] * xaxis for _ in range(yaxis)]
 
-    def mark_word(word):
-        for y, row in enumerate(card):
-            for x, card_word in enumerate(row):
-                if card_word == word:
-                    marked[y][x] = True
-                    log_action(log_file, f"Mark {card[y][x]} at ({x},{y})")
-                    return x, y
+    def mark_word(coords, mark):
+        try:
+            x, y = map(int, coords.split(','))
+            if 0 <= x < xaxis and 0 <= y < yaxis:
+                marked[y][x] = mark
+                action = "Mark" if mark else "Unmark"
+                log_action(log_file, f"{action} {card[y][x]} at ({x},{y})")
+                return x, y
+        except ValueError:
+            pass
         return None, None
 
     def log_action(log_file, action):
@@ -73,11 +76,12 @@ def player_game(conn, player_id, card, xaxis, yaxis, log_file):
         if msg == "quit":
             conn.send((player_id, "quit"))
             break
-        elif isinstance(msg, str):  # The message is a word to mark
-            x, y = mark_word(msg)
-            conn.send((player_id, "mark", x, y, msg))
+        elif isinstance(msg, tuple) and msg[0] == "mark":
+            coords, mark = msg[1], msg[2]
+            x, y = mark_word(coords, mark)
+            conn.send((player_id, "mark", x, y, coords, mark))
             if check_winner(marked):
-                conn.send((player_id, "win", x, y, msg))
+                conn.send((player_id, "win", x, y, coords))
                 break
 
     conn.close()
@@ -132,9 +136,24 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                 elif event.key_code == ord('m'):
                     word = random.choice(words)
                     print(f"\nGezogenes Wort: {word}")
-                    print("Bitte F drücken um fortzufahren.")
                     parent_conn1.send(word)
                     parent_conn2.send(word)
+
+                elif event.key_code == ord('1'):
+                    screen.close()
+                    coords1 = input("Spieler 1: Bitte geben Sie die Koordinaten des Wortes ein, das Sie markieren oder demarkieren möchten (Format: x,y): ")
+                    mark1 = input("Möchten Sie das Wort markieren (m) oder demarkieren (u)?: ").lower() == 'm'
+                    parent_conn1.send(("mark", coords1.strip(), mark1))
+                    screen.open()
+                    display_bingo_cards(screen, card1, marked1, card2, marked2)
+
+                elif event.key_code == ord('2'):
+                    screen.close()
+                    coords2 = input("Spieler 2: Bitte geben Sie die Koordinaten des Wortes ein, das Sie markieren oder demarkieren möchten (Format: x,y): ")
+                    mark2 = input("Möchten Sie das Wort markieren (m) oder demarkieren (u)?: ").lower() == 'm'
+                    parent_conn2.send(("mark", coords2.strip(), mark2))
+                    screen.open()
+                    display_bingo_cards(screen, card1, marked1, card2, marked2)
 
             if parent_conn1.poll():
                 msg = parent_conn1.recv()
@@ -142,12 +161,13 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                     print("Spieler 1 hat das Spiel verlassen.")
                     break
                 elif msg[1] == "win":
-                    print(f"Spieler 1 gewinnt mit dem Wort: {msg[4]}!")
+                    print(f"Spieler 1 gewinnt!")
                     break
                 elif msg[1] == "mark":
-                    _, _, x, y, word = msg
+                    _, _, x, y, coords, mark = msg
                     if x is not None and y is not None:
-                        marked1[y][x] = True
+                        marked1[y][x] = mark  # Set the mark state
+                        display_bingo_cards(screen, card1, marked1, card2, marked2)
 
             if parent_conn2.poll():
                 msg = parent_conn2.recv()
@@ -155,16 +175,13 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                     print("Spieler 2 hat das Spiel verlassen.")
                     break
                 elif msg[1] == "win":
-                    print(f"Spieler 2 gewinnt mit dem Wort: {msg[4]}!")
+                    print(f"Spieler 2 gewinnt!")
                     break
                 elif msg[1] == "mark":
-                    _, _, x, y, word = msg
+                    _, _, x, y, coords, mark = msg
                     if x is not None and y is not None:
-                        marked2[y][x] = True
-
-            if event and isinstance(event, KeyboardEvent):
-                if event.key_code == ord('f'):
-                    display_bingo_cards(screen, card1, marked1, card2, marked2)
+                        marked2[y][x] = mark  # Set the mark state
+                        display_bingo_cards(screen, card1, marked1, card2, marked2)
 
             time.sleep(0.1)
     finally:
@@ -184,20 +201,8 @@ def main(screen, xaxis, yaxis, words_file, log_dir):
         if len(words) < xaxis * yaxis * 2:
             print("Nicht genügend Wörter in der Datei.")
             exit(1)
-        while True:
-            print(f"xaxis: {xaxis}")
-            print(f"yaxis: {yaxis}")
-            print(f"wordfile: {words_file}")
-            print(f"log_dir: {log_dir}")
 
-            host_game(screen, words, xaxis, yaxis, log_dir)
-
-            print("Möchten Sie das Spiel beenden?")
-            event = screen.get_event()
-            if event and isinstance(event, KeyboardEvent):
-                if event.key_code == ord('j'):
-                 print("Spiel beendet.")
-                break
+        host_game(screen, words, xaxis, yaxis, log_dir)
 
     except Exception as e:
         print(f"Fehler: {e}")
