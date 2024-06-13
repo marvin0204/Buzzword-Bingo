@@ -133,27 +133,20 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                     parent_conn1.send("quit")
                     parent_conn2.send("quit")
                     break
-                elif event.key_code == ord('m'):
-                    word = random.choice(words)
-                    print(f"\nGezogenes Wort: {word}")
-                    parent_conn1.send(word)
-                    parent_conn2.send(word)
-
                 elif event.key_code == ord('1'):
                     screen.close()
                     coords1 = input("Spieler 1: Bitte geben Sie die Koordinaten des Wortes ein, das Sie markieren oder demarkieren möchten (Format: x,y): ")
                     mark1 = input("Möchten Sie das Wort markieren (m) oder demarkieren (u)?: ").lower() == 'm'
                     parent_conn1.send(("mark", coords1.strip(), mark1))
-                    screen.open()
                     display_bingo_cards(screen, card1, marked1, card2, marked2)
-
+                    screen.open()
                 elif event.key_code == ord('2'):
                     screen.close()
                     coords2 = input("Spieler 2: Bitte geben Sie die Koordinaten des Wortes ein, das Sie markieren oder demarkieren möchten (Format: x,y): ")
                     mark2 = input("Möchten Sie das Wort markieren (m) oder demarkieren (u)?: ").lower() == 'm'
                     parent_conn2.send(("mark", coords2.strip(), mark2))
-                    screen.open()
                     display_bingo_cards(screen, card1, marked1, card2, marked2)
+                    screen.open()
 
             if parent_conn1.poll():
                 msg = parent_conn1.recv()
@@ -223,3 +216,4 @@ if __name__ == "__main__":
         exit(1)
 
     Screen.wrapper(main, arguments=[xaxis, yaxis, words_file, log_dir])
+
