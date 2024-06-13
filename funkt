@@ -1,0 +1,220 @@
+import random
+import os
+from datetime import datetime
+from multiprocessing import Process, Pipe
+from asciimatics.screen import Screen
+from asciimatics.event import KeyboardEvent
+import time
+
+# Funktion zur Generierung einer Bingokarte
+def generate_bingo_card(words, xaxis, yaxis):
+    random.shuffle(words)
+    card = [words[i * xaxis:(i + 1) * xaxis] for i in range(yaxis)]
+    return card
+
+# Funktion zur Anzeige der Bingokarten
+def display_bingo_cards(screen, card1, marked1, card2, marked2):
+    screen.clear()
+    screen.print_at("Spieler 1", 0, 0, colour=7)
+    screen.print_at("Spieler 2", 40, 0, colour=7)
+    
+    for y, row in enumerate(card1):
+        for x, word in enumerate(row):
+            if marked1[y][x]:
+                word = '\u0336'.join(word) + '\u0336'  # Durchstreichen des Wortes
+                screen.print_at(word, x * 10, y * 2 + 2, colour=2)
+            else:
+                screen.print_at(word, x * 10, y * 2 + 2)
+    
+    for y, row in enumerate(card2):
+        for x, word in enumerate(row):
+            if marked2[y][x]:
+                word = '\u0336'.join(word) + '\u0336'  # Durchstreichen des Wortes
+                screen.print_at(word, x * 10 + 40, y * 2 + 2, colour=2)
+            else:
+                screen.print_at(word, x * 10 + 40, y * 2 + 2)
+
+    screen.refresh()
+
+# Funktion zur Überprüfung auf Gewinn
+def check_winner(marked):
+    n = len(marked)
+    for row in marked:
+        if all(row):
+            return True
+    for col in range(n):
+        if all(row[col] for row in marked):
+            return True
+    if all(marked[i][i] for i in range(n)) or all(marked[i][n-i-1] for i in range(n)):
+        return True
+    return False
+
+# Funktion zum Spiel eines Spielers
+def player_game(conn, player_id, card, xaxis, yaxis, log_file):
+    marked = [[False] * xaxis for _ in range(yaxis)]
+
+    def mark_word(word):
+        for y, row in enumerate(card):
+            for x, card_word in enumerate(row):
+                if card_word == word:
+                    marked[y][x] = True
+                    log_action(log_file, f"Mark {card[y][x]} at ({x},{y})")
+                    return x, y
+        return None, None
+
+    def log_action(log_file, action):
+        with open(log_file, 'a') as f:
+            f.write(f"{datetime.now()} {action}\n")
+
+    conn.send((player_id, "ready"))
+
+    while True:
+        msg = conn.recv()
+        if msg == "quit":
+            conn.send((player_id, "quit"))
+            break
+        elif isinstance(msg, str):  # The message is a word to mark
+            x, y = mark_word(msg)
+            conn.send((player_id, "mark", x, y, msg))
+            if check_winner(marked):
+                conn.send((player_id, "win", x, y, msg))
+                break
+
+    conn.close()
+
+# Funktion zum Spielhost
+def host_game(screen, words, xaxis, yaxis, log_dir):
+    card1 = generate_bingo_card(words, xaxis, yaxis)
+    card2 = generate_bingo_card(words, xaxis, yaxis)
+    parent_conn1, child_conn1 = Pipe()
+    parent_conn2, child_conn2 = Pipe()
+
+    player_log1 = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}-bingo-Player1.txt")
+    player_log2 = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d-%H-%M-%S')}-bingo-Player2.txt")
+
+    with open(player_log1, 'w') as f:
+        f.write(f"{datetime.now()} Start des Spiels\n")
+        f.write(f"{datetime.now()} Größe des Spielfelds: ({xaxis},{yaxis})\n")
+
+    with open(player_log2, 'w') as f:
+        f.write(f"{datetime.now()} Start des Spiels\n")
+        f.write(f"{datetime.now()} Größe des Spielfelds: ({xaxis},{yaxis})\n")
+
+    marked1 = [[False] * xaxis for _ in range(yaxis)]
+    marked2 = [[False] * xaxis for _ in range(yaxis)]
+
+    p1 = Process(target=player_game, args=(child_conn1, 1, card1, xaxis, yaxis, player_log1))
+    p2 = Process(target=player_game, args=(child_conn2, 2, card2, xaxis, yaxis, player_log2))
+    p1.start()
+    p2.start()
+
+    try:
+        ready_players = 0
+        while ready_players < 2:
+            if parent_conn1.poll():
+                msg = parent_conn1.recv()
+                if msg[1] == "ready":
+                    ready_players += 1
+            if parent_conn2.poll():
+                msg = parent_conn2.recv()
+                if msg[1] == "ready":
+                    ready_players += 1
+        
+        display_bingo_cards(screen, card1, marked1, card2, marked2)
+
+        while True:
+            event = screen.get_event()
+            if event and isinstance(event, KeyboardEvent):
+                if event.key_code == ord('q'):
+                    parent_conn1.send("quit")
+                    parent_conn2.send("quit")
+                    break
+                elif event.key_code == ord('m'):
+                    word = random.choice(words)
+                    print(f"\nGezogenes Wort: {word}")
+                    print("Bitte F drücken um fortzufahren.")
+                    parent_conn1.send(word)
+                    parent_conn2.send(word)
+
+            if parent_conn1.poll():
+                msg = parent_conn1.recv()
+                if msg[1] == "quit":
+                    print("Spieler 1 hat das Spiel verlassen.")
+                    break
+                elif msg[1] == "win":
+                    print(f"Spieler 1 gewinnt mit dem Wort: {msg[4]}!")
+                    break
+                elif msg[1] == "mark":
+                    _, _, x, y, word = msg
+                    if x is not None and y is not None:
+                        marked1[y][x] = True
+
+            if parent_conn2.poll():
+                msg = parent_conn2.recv()
+                if msg[1] == "quit":
+                    print("Spieler 2 hat das Spiel verlassen.")
+                    break
+                elif msg[1] == "win":
+                    print(f"Spieler 2 gewinnt mit dem Wort: {msg[4]}!")
+                    break
+                elif msg[1] == "mark":
+                    _, _, x, y, word = msg
+                    if x is not None and y is not None:
+                        marked2[y][x] = True
+
+            if event and isinstance(event, KeyboardEvent):
+                if event.key_code == ord('f'):
+                    display_bingo_cards(screen, card1, marked1, card2, marked2)
+
+            time.sleep(0.1)
+    finally:
+        p1.join()
+        p2.join()
+        parent_conn1.close()
+        child_conn1.close()
+        parent_conn2.close()
+        child_conn2.close()
+
+# Hauptprogramm
+def main(screen, xaxis, yaxis, words_file, log_dir):
+    try:
+        with open(words_file, 'r') as f:
+            words = [line.strip() for line in f.readlines()]
+
+        if len(words) < xaxis * yaxis * 2:
+            print("Nicht genügend Wörter in der Datei.")
+            exit(1)
+        while True:
+            print(f"xaxis: {xaxis}")
+            print(f"yaxis: {yaxis}")
+            print(f"wordfile: {words_file}")
+            print(f"log_dir: {log_dir}")
+
+            host_game(screen, words, xaxis, yaxis, log_dir)
+
+            print("Möchten Sie das Spiel beenden?")
+            event = screen.get_event()
+            if event and isinstance(event, KeyboardEvent):
+                if event.key_code == ord('j'):
+                 print("Spiel beendet.")
+                break
+
+    except Exception as e:
+        print(f"Fehler: {e}")
+
+if __name__ == "__main__":
+    try:
+        xaxis = int(input("Bitte eine Zahl für die x-Achse eingeben: "))
+        yaxis = int(input("Bitte eine Zahl für die y-Achse eingeben: "))
+    except ValueError:
+        print("Bitte eine gültige Zahl eingeben.")
+        exit(1)
+
+    words_file = input("Bitte den Pfad zur Wortdatei eingeben: ")
+    log_dir = input("Bitte das Verzeichnis für die Logs eingeben: ")
+
+    if not os.path.exists(log_dir):
+        print("Das angegebene Verzeichnis für die Logs existiert nicht.")
+        exit(1)
+
+    Screen.wrapper(main, arguments=[xaxis, yaxis, words_file, log_dir])
