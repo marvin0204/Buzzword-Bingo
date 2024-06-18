@@ -5,6 +5,7 @@ from multiprocessing import Process, Pipe
 from asciimatics.screen import Screen
 from asciimatics.event import KeyboardEvent
 import time
+import sys
 
 # Funktion zur Generierung einer Bingokarte
 def generate_bingo_card(words, xaxis, yaxis):
@@ -131,42 +132,60 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                     break
                 elif event.key_code == ord('m'):
                     word = random.choice(words)
-                    print(f"\nGezogenes Wort: {word}")
-                    print("Bitte F drücken um fortzufahren.")
+                    screen.clear()  # Clear screen before printing new word
+                    display_bingo_cards(screen, card1, marked1, card2, marked2)  # Redisplay bingo cards
+                    screen.print_at(f"Gezogenes Wort: {word}", 0, screen.height - 2, colour=Screen.COLOUR_YELLOW)
+                    screen.print_at("Bitte F drücken um fortzufahren.", 0, screen.height - 1, colour=Screen.COLOUR_WHITE)
+                    screen.refresh()
                     parent_conn1.send(word)
                     parent_conn2.send(word)
 
             if parent_conn1.poll():
                 msg = parent_conn1.recv()
                 if msg[1] == "quit":
-                    print("Spieler 1 hat das Spiel verlassen.")
-                    break
-                elif msg[1] == "win":
-                    print(f"Spieler 1 gewinnt mit dem Wort: {msg[4]}!")
+                    screen.print_at("Spieler 1 hat das Spiel verlassen.", 0, screen.height - 3, colour=Screen.COLOUR_RED)
+                    screen.refresh()
                     break
                 elif msg[1] == "mark":
                     _, _, x, y, word = msg
                     if x is not None and y is not None:
                         marked1[y][x] = True
+                elif msg[1] == "win":
+                    screen.print_at(f"Spieler 1 gewinnt mit dem Wort: {msg[4]}!", 0, screen.height - 4, colour=Screen.COLOUR_GREEN)
+                    screen.refresh()
+                    time.sleep(3.0)
+                    screen.clear()
+                    screen.refresh()
+                    print("Der Sieger ist Spieler 1!")
+                    time.sleep(5.0)
+                    host_game(screen, words, xaxis, yaxis, log_dir)
+
 
             if parent_conn2.poll():
                 msg = parent_conn2.recv()
                 if msg[1] == "quit":
-                    print("Spieler 2 hat das Spiel verlassen.")
-                    break
-                elif msg[1] == "win":
-                    print(f"Spieler 2 gewinnt mit dem Wort: {msg[4]}!")
+                    screen.print_at("Spieler 2 hat das Spiel verlassen.", 0, screen.height - 3, colour=Screen.COLOUR_RED)
+                    screen.refresh()
                     break
                 elif msg[1] == "mark":
                     _, _, x, y, word = msg
                     if x is not None and y is not None:
                         marked2[y][x] = True
+                elif msg[1] == "win":
+                    screen.print_at(f"Spieler 2 gewinnt mit dem Wort: {msg[4]}!", 0, screen.height - 4, colour=Screen.COLOUR_GREEN)
+                    screen.refresh()
+                    time.sleep(3.0)
+                    screen.clear()
+                    screen.refresh()
+                    print("Der Sieger ist Spieler 2!")
+                    time.sleep(5.0)
+                    host_game(screen, words, xaxis, yaxis, log_dir)
+
 
             if event and isinstance(event, KeyboardEvent):
                 if event.key_code == ord('f'):
                     display_bingo_cards(screen, card1, marked1, card2, marked2)
 
-            time.sleep(0.1)
     finally:
         p1.join()
         p2.join()
@@ -184,23 +203,13 @@ def main(screen, xaxis, yaxis, words_file, log_dir):
         if len(words) < xaxis * yaxis * 2:
             print("Nicht genügend Wörter in der Datei.")
             exit(1)
-        while True:
-            print(f"xaxis: {xaxis}")
-            print(f"yaxis: {yaxis}")
-            print(f"wordfile: {words_file}")
-            print(f"log_dir: {log_dir}")
-
-            host_game(screen, words, xaxis, yaxis, log_dir)
-
-            print("Möchten Sie das Spiel beenden?")
-            event = screen.get_event()
-            if event and isinstance(event, KeyboardEvent):
-                if event.key_code == ord('j'):
-                 print("Spiel beendet.")
-                break
 
     except Exception as e:
-        print(f"Fehler: {e}")
+     print(f"Fehler: {e}")
+
+    while True:
+         host_game(screen, words, xaxis, yaxis, log_dir)
+        
 
 if __name__ == "__main__":
     try:
