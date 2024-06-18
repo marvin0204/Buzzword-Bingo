@@ -74,7 +74,7 @@ def player_game(conn, player_id, card, xaxis, yaxis, log_file):
         if msg == "quit":
             conn.send((player_id, "quit"))
             break
-        elif isinstance(msg, str):  # The message is a word to mark
+        elif isinstance(msg, str): 
             x, y = mark_word(msg)
             conn.send((player_id, "mark", x, y, msg))
             if check_winner(marked):
@@ -133,7 +133,7 @@ def host_game(screen, words, xaxis, yaxis, log_dir):
                 elif event.key_code == ord('m'):
                     word = random.choice(words)
                     screen.clear()  # Clear screen before printing new word
-                    display_bingo_cards(screen, card1, marked1, card2, marked2)  # Redisplay bingo cards
+                    display_bingo_cards(screen, card1, marked1, card2, marked2) 
                     screen.print_at(f"Gezogenes Wort: {word}", 0, screen.height - 2, colour=Screen.COLOUR_YELLOW)
                     screen.print_at("Bitte F drücken um fortzufahren.", 0, screen.height - 1, colour=Screen.COLOUR_WHITE)
                     screen.refresh()
